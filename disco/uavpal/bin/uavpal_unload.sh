@@ -1,7 +1,8 @@
 #!/bin/sh
 
-usbmodeswitchStatus=`ps |grep usb_modeswitch |grep -v grep |wc -l`
-if [ $usbmodeswitchStatus -ne 0 ]; then
+# shellcheck disable=SC2009
+usbmodeswitchStatus=$(ps |grep usb_modeswitch |grep -c -v grep)
+if [ "$usbmodeswitchStatus" -ne 0 ]; then
 	exit 0  # ignoring "removal" event while usb_modesswitch is running
 fi
 
@@ -22,7 +23,7 @@ ulogger -s -t uavpal_drone "... clearing iptables rules"
 iptables -F INPUT
 
 ulogger -s -t uavpal_drone "... clearing default route"
-ip route del default via $(cat /tmp/hilink_router_ip)
+ip route del default via "$(cat /tmp/hilink_router_ip)"
 
 ulogger -s -t uavpal_drone "... removing temp files"
 rm /tmp/serial_ctrl_dev

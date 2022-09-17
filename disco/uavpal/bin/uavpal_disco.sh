@@ -1,7 +1,7 @@
 #!/bin/sh
 {
 # exports
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/data/ftp/uavpal/lib
+export LD_LIBRARY_PATH="$LD_LIBRARY_PATH":/data/ftp/uavpal/lib
 
 # variables
 cdc_if="eth1"
@@ -9,9 +9,11 @@ cdc_if="eth1"
 ppp_if="ppp0"
 # TODO: make the following two dynamic (e.g. via AT^NDISDUP=1,0)
 serial_ctrl_dev="ttyUSB0"
+# shellcheck disable=SC2034
 serial_ppp_dev="ttyUSB1"
 
 # functions
+# shellcheck disable=SC1091
 . /data/ftp/uavpal/bin/uavpal_globalfunctions.sh
 
 # main
@@ -21,16 +23,16 @@ ulogger -s -t uavpal_drone "=== Loading uavpal softmod $(head -1 /data/ftp/uavpa
 # set platform, evinrude=Disco, ardrone3=Bebop 2
 platform=$(grep 'ro.parrot.build.product' /etc/build.prop | cut -d'=' -f 2)
 drone_fw_version=$(grep 'ro.parrot.build.uid' /etc/build.prop | cut -d '-' -f 3)
-drone_fw_version_numeric=${drone_fw_version//.}
+drone_fw_version_numeric=$(echo "$drone_fw_version" | sed 's/\.//g')
 
-if [ "$platform" == "evinrude" ]; then
+if [ "$platform" = "evinrude" ]; then
 	drone_alias="Parrot Disco"
 	if [ "$drone_fw_version_numeric" -ge "170" ]; then
 		kernel_mods="1.7.0"
 	else
 		kernel_mods="1.4.1"
 	fi
-elif [ "$platform" == "ardrone3" ]; then
+elif [ "$platform" = "ardrone3" ]; then
 	drone_alias="Parrot Bebop 2"
 	kernel_mods="4.4.2"
 else
@@ -56,7 +58,7 @@ insmod /data/ftp/uavpal/mod/${kernel_mods}/iptable_filter.ko            # needed
 insmod /data/ftp/uavpal/mod/${kernel_mods}/xt_tcpudp.ko                 # needed for Disco firmware <=1.4.1 only
 
 ulogger -s -t uavpal_drone "... running usb_modeswitch to switch Huawei modem into huawei-new-mode"
-/data/ftp/uavpal/bin/usb_modeswitch -v 12d1 -p `lsusb |grep "ID 12d1" | cut -f 3 -d \:` --huawei-new-mode -s 3
+/data/ftp/uavpal/bin/usb_modeswitch -v 12d1 -p "$(lsusb |grep "ID 12d1" | cut -f 3 -d :)" --huawei-new-mode -s 3
 
 ulogger -s -t uavpal_drone "... detecting Huawei modem type"
 while true
@@ -71,6 +73,7 @@ do
 		ulogger -s -t uavpal_drone "... connecting modem to Internet (Hi-Link)"
 		connect_hilink
 		ulogger -s -t uavpal_drone "... enabling Hi-Link DMZ mode (1:1 NAT for better zerotier performance)"
+		# shellcheck disable=SC2154
 		hilink_api "post" "/api/security/dmz" "<request><DmzStatus>1</DmzStatus><DmzIPAddress>${hilink_ip}</DmzIPAddress></request>"
 		ulogger -s -t uavpal_drone "... setting Hi-Link NAT type full cone (better zerotier performance)"
 		hilink_api "post" "/api/security/nat" "<request><NATType>1</NATType></request>"
@@ -109,15 +112,14 @@ do
 done
 
 while true; do
-	check_connection
-	if [ $? -eq 0 ]; then
+	if check_connection; then
 		break # break out of loop
 	fi
 done
 ulogger -s -t uavpal_drone "... public Internet connection is up"
 
-ulogger -s -t uavpal_drone "... setting DNS servers statically (Google Public DNS)"
-echo -e 'nameserver 8.8.8.8\nnameserver 8.8.4.4' >/etc/resolv.conf
+ulogger -s -t uavpal_drone "... setting DNS servers statically (Cloudflare and Google Public DNS)"
+printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8' >/etc/resolv.conf
 
 ulogger -s -t uavpal_drone "... setting date/time using ntp"
 ntpd -n -d -q -p 0.debian.pool.ntp.org -p 1.debian.pool.ntp.org -p 2.debian.pool.ntp.org -p 3.debian.pool.ntp.org
@@ -125,8 +127,9 @@ ntpd -n -d -q -p 0.debian.pool.ntp.org -p 1.debian.pool.ntp.org -p 2.debian.pool
 if [ -f /data/ftp/uavpal/conf/debug ]; then
 	debug_filename="/data/ftp/internal_000/Debug/ulog_debug_$(date +%Y%m%d%H%M%S).log"
 	ulogger -s -t uavpal_drone "... Debug mode is enabled - writing debug log to internal storage: $debug_filename"
-	kill -9 $(ps |grep ulogcat |grep debugdummy | awk '{ print $1 }')
-	ulogcat -u -k -l -F debugdummy >$debug_filename &
+	# shellcheck disable=SC2009
+	kill -9 "$(ps |grep ulogcat |grep debugdummy | awk '{ print $1 }')"
+	ulogcat -u -k -l -F debugdummy >"$debug_filename" &
 fi
 
 ulogger -s -t uavpal_drone "... starting Glympse script for GPS tracking"
@@ -146,8 +149,8 @@ if [ ! -d "/data/lib/zerotier-one/networks.d" ]; then
 	ulogger -s -t uavpal_drone "... (initial-)joining zerotier network ID $(conf_read zt_networkid)"
 	while true
 	do
-		ztjoin_response=`/data/ftp/uavpal/bin/zerotier-one -q join $(conf_read zt_networkid)`
-		if [ "`echo $ztjoin_response |head -n1 |awk '{print $1}')`" == "200" ]; then
+		ztjoin_response=$(/data/ftp/uavpal/bin/zerotier-one -q join "$(conf_read zt_networkid)")
+		if [ "$(echo "$ztjoin_response" |head -n1 |awk '{print $1}')" = "200" ]; then
 			ulogger -s -t uavpal_drone "... successfully joined zerotier network ID $(conf_read zt_networkid)"
 			break # break out of loop
 		else
